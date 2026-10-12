@@ -18,14 +18,14 @@ import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
 
-ROOT = Path("/content/adaptive-market-intelligence")
+ROOT = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(ROOT))
 
 from app.data.market_data import download_market_data
 
 
-def create_h005_dataset():
+def create_h005_dataset(raw=None):
 
     print("=" * 70)
     print("H005 — PRICE RANGE × MARKET REGIME")
@@ -35,11 +35,10 @@ def create_h005_dataset():
     # 1. Download the SAME raw BTC-USD data used by Data Layer V1
     # ------------------------------------------------------------
 
-    raw = download_market_data(
-        symbol="BTC-USD",
-        start="2018-01-01",
-        end=None
-    )
+    if raw is None:
+        raw = download_market_data(
+            symbol="BTC-USD", start="2018-01-01", end=None
+        )
 
     df = raw.copy()
 
@@ -67,7 +66,7 @@ def create_h005_dataset():
     # ------------------------------------------------------------
 
     df["return_1"] = (
-        df["price"].pct_change()
+        df["price"].pct_change(fill_method=None)
     )
 
     # ------------------------------------------------------------
@@ -129,7 +128,7 @@ def create_h005_dataset():
     # 7. Current volatility regime
     #
     # 10-day realized volatility.
-    # Median split = HIGH / LOW
+    # Historical expanding median split = HIGH / LOW
     # ------------------------------------------------------------
 
     df["volatility_10"] = (
@@ -138,10 +137,9 @@ def create_h005_dataset():
         .std()
     )
 
-    volatility_median = (
-        df["volatility_10"]
-        .median()
-    )
+    # Only earlier observations may set today's regime threshold.
+    volatility_median = df["volatility_10"].expanding(min_periods=20).median().shift(1)
+    df["volatility_threshold"] = volatility_median
 
     df["volatility_regime"] = np.where(
         df["volatility_10"] >= volatility_median,
@@ -165,11 +163,12 @@ def create_h005_dataset():
             "sma_20",
             "trend_regime",
             "volatility_10",
+            "volatility_threshold",
             "volatility_regime",
         ]
     ]
 
-    df = df.dropna().reset_index(drop=True)
+    df = df.replace([np.inf, -np.inf], np.nan).dropna().reset_index(drop=True)
 
     return df
 
@@ -177,6 +176,12 @@ def create_h005_dataset():
 def run_h005():
 
     df = create_h005_dataset()
+    split = int(len(df) * 0.70)
+    if split <= 7 or split >= len(df):
+        raise ValueError("Not enough observations for purged 70/30 validation.")
+    # Seven-day targets must end before the holdout starts.
+    train = df.iloc[:split - 7]
+    holdout = df.iloc[split:]
 
     print()
     print("=" * 70)
@@ -211,7 +216,7 @@ def run_h005():
         ~ price_range
         * C(trend_regime)
         """,
-        data=df
+        data=train
     ).fit(
         cov_type="HAC",
         cov_kwds={"maxlags": 7}
@@ -235,13 +240,34 @@ def run_h005():
         ~ price_range
         * C(volatility_regime)
         """,
-        data=df
+        data=train
     ).fit(
         cov_type="HAC",
         cov_kwds={"maxlags": 7}
     )
 
     print(model_volatility.summary())
+
+    from sklearn.metrics import mean_squared_error, r2_score
+
+    validation_rows = []
+    for name, model in [("H005.1", model_trend), ("H005.2", model_volatility)]:
+        unseen = set(holdout["trend_regime" if name == "H005.1" else "volatility_regime"]) - set(train["trend_regime" if name == "H005.1" else "volatility_regime"])
+        if unseen:
+            raise ValueError(f"Holdout contains unseen regimes: {sorted(unseen)}")
+        predicted = model.predict(holdout)
+        actual = holdout["future_volatility_7d"]
+        validation_rows.append({
+            "experiment": name, "train_samples": len(train),
+            "purged_samples": 7, "holdout_samples": len(holdout),
+            "oos_r2": r2_score(actual, predicted),
+            "oos_rmse": np.sqrt(mean_squared_error(actual, predicted)),
+            "baseline_rmse": np.sqrt(mean_squared_error(actual, np.full(len(actual), train["future_volatility_7d"].mean()))),
+        })
+    validation = pd.DataFrame(validation_rows)
+    print("Frozen-model holdout results:")
+    print(validation.to_string(index=False))
+    validation.to_csv(ROOT / "experiments" / "h005_validation.csv", index=False)
 
     # ------------------------------------------------------------
     # Save dataset used by H005

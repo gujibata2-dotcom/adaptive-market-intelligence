@@ -5,3 +5,7 @@ xgboost
 lightgbm
 matplotlib
 yfinance
+statsmodels>=0.14,<0.15
+
+streamlit>=1.40,<2
+requests>=2.31,<3

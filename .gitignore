@@ -10,3 +10,7 @@ __pycache__/
 *.log
 
 data/raw/
+
+.venv/
+prediction_ledger*.csv
+experiments/h005_validation.csv

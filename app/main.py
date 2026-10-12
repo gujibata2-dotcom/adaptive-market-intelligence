@@ -68,7 +68,7 @@ def create_features(df):
     )
 
     df["volume_change"] = (
-        df["Volume"].pct_change()
+        df["Volume"].pct_change(fill_method=None)
     )
 
     # Future return
@@ -85,7 +85,7 @@ def create_features(df):
         df["future_return"] > 0
     ).astype(int)
 
-    df = df.dropna().reset_index(drop=True)
+    df = df.replace([np.inf, -np.inf], np.nan).dropna().reset_index(drop=True)
 
     return df
 
@@ -121,8 +121,12 @@ def run_experiment():
     # NEVER shuffle financial time series
     train_size = int(len(df) * 0.70)
 
-    X_train = X.iloc[:train_size]
-    y_train = y.iloc[:train_size]
+    if train_size < 2 or train_size >= len(df):
+        raise ValueError("Not enough complete samples for a time-based split.")
+
+    # The last training label uses the first test close; purge that row.
+    X_train = X.iloc[:train_size - 1]
+    y_train = y.iloc[:train_size - 1]
 
     X_test = X.iloc[train_size:]
     y_test = y.iloc[train_size:]
@@ -137,7 +141,7 @@ def run_experiment():
         f"Train period : "
         f"{df['Date'].iloc[0]} "
         f"→ "
-        f"{df['Date'].iloc[train_size - 1]}"
+        f"{df['Date'].iloc[train_size - 2]}"
     )
 
     print(
@@ -173,6 +177,8 @@ def run_experiment():
         probabilities >= 0.5
     ).astype(int)
 
+    baseline = accuracy_score(y_test, np.full(len(y_test), int(y_train.mean() >= 0.5)))
+
     accuracy = accuracy_score(
         y_test,
         predictions
@@ -187,6 +193,8 @@ def run_experiment():
         f"Accuracy: "
         f"{accuracy * 100:.2f}%"
     )
+
+    print(f"Training-majority baseline: {baseline * 100:.2f}%")
 
     # Prediction Ledger
     results = df.iloc[

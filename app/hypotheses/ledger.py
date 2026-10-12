@@ -6,12 +6,12 @@ PROVE BEFORE TRADE
 TRUTH BEFORE BELIEF
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 from pathlib import Path
 
 
-LEDGER_PATH = Path("experiments/hypothesis_ledger.csv")
+LEDGER_PATH = Path(__file__).resolve().parents[2] / "experiments" / "hypothesis_ledger.csv"
 
 
 def record_hypothesis(
@@ -30,7 +30,7 @@ def record_hypothesis(
     )
 
     record = pd.DataFrame([{
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "hypothesis_id": hypothesis_id,
         "hypothesis": hypothesis,
         "sample_size": sample_size,

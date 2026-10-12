@@ -137,3 +137,52 @@ maximum strategy drawdown was **13.79%**. Three walk-forward returns were
 **-2.64%, +7.63%, -1.50%**. It underperformed matched buy-and-hold in two
 windows. This evidence does not justify real-money deployment. These are
 historical next-close executions with modeled costs, not live broker fills.
+
+## Feature research / ปรับปรุงตัวแปร
+
+The dashboard now lets you compare **legacy (8)** and **normalized (12)**
+feature sets. Legacy remains the default because the new representation did
+not improve paper-account performance on the inspected historical snapshot.
+The CLI experiment remains legacy-compatible; `run_paper_validation.py`
+accepts `--feature-set normalized` for the experimental set.
+
+| Variable | Meaning |
+| --- | --- |
+| return_1 / return_3 / return_7 | Price percentage change over 1 / 3 / 7 days |
+| distance_sma_7 / 20 / 50 | Close divided by rolling mean minus 1; replaces raw price-level SMAs |
+| volatility_7 / volatility_20 | Rolling standard deviation of daily returns |
+| price_range | (High - Low) / Close |
+| close_location | (Close - Low) / (High - Low); 0.5 for zero-range candles |
+| volume_log_change | Change in log(1 + Volume); tolerates zero volume |
+| volume_relative_20 | Volume divided by the **prior** 20-day mean minus 1 |
+
+All predictors use data available at the current close only. The prediction
+label uses the next close and is excluded from model inputs. No ETH, Nasdaq,
+DXY or VIX data is invented or forward-filled into this dataset.
+
+Run `python experiments/compare_features.py` to reproduce
+`experiments/feature_validation/`. Both sets use identical dates and the same
+model/trading settings on the committed real Coinbase snapshot. Summary:
+
+| Metric | Legacy | Normalized experimental |
+| --- | --- | --- |
+| Holdout accuracy | 48.97% | 50.28% |
+| Log loss (lower is better) | 0.7477 | 0.7222 |
+| Paper return after costs | -3.80% | -5.59% |
+| Maximum drawdown | 13.79% | 12.81% |
+| Closed trades | 12 | 28 |
+
+Training-majority accuracy was 50.47%, higher than both models. Walk-forward
+results are mixed; no profitability claim or automatic promotion is made.
+The historical period has already been inspected, so further comparisons are
+exploratory and need confirmation on new unseen data.
+
+`training_permutation.csv` measures model reliance on each experimental
+variable inside the **outer training portion** with its own chronological
+80/20 split and one purged boundary row. It does not use the final holdout to
+select or delete features. A positive log-loss increase means shuffling that
+variable hurt this fitted model. Mean/std across ten shuffles are diagnostics,
+not p-values or proof of statistical significance; correlated features and
+serial dependence affect interpretation. No variables are automatically
+removed from these diagnostics. The strongest observed diagnostics were
+20-day mean distance, close location, and 50-day mean distance.

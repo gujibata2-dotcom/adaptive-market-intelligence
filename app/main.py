@@ -33,61 +33,12 @@ def load_market_data():
     return df
 
 
+# Keep the command-line legacy experiment reproducible.
+from app.features import create_features as _create_features
+
+
 def create_features(df):
-
-    df = df.copy()
-
-    df["return_1"] = df["Close"].pct_change()
-
-    df["return_3"] = df["Close"].pct_change(3)
-
-    df["return_7"] = df["Close"].pct_change(7)
-
-    df["sma_7"] = (
-        df["Close"]
-        .rolling(7)
-        .mean()
-    )
-
-    df["sma_20"] = (
-        df["Close"]
-        .rolling(20)
-        .mean()
-    )
-
-    df["sma_50"] = (
-        df["Close"]
-        .rolling(50)
-        .mean()
-    )
-
-    df["volatility_7"] = (
-        df["return_1"]
-        .rolling(7)
-        .std()
-    )
-
-    df["volume_change"] = (
-        df["Volume"].pct_change(fill_method=None)
-    )
-
-    # Future return
-    df["future_return"] = (
-        df["Close"].shift(-1)
-        / df["Close"]
-        - 1
-    )
-
-    # Target
-    # 1 = price increases next day
-    # 0 = price decreases or stays flat
-    df["target"] = (
-        df["future_return"] > 0
-    ).astype(int)
-
-    df = df.replace([np.inf, -np.inf], np.nan).dropna().reset_index(drop=True)
-
-    return df
+    return _create_features(df, feature_set="legacy")
 
 
 def run_experiment():

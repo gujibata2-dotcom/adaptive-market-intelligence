@@ -3,9 +3,10 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, log_loss
 from xgboost import XGBClassifier
-from app.main import create_features, SEED
+from app.main import SEED
+from app.features import create_features, FEATURE_SETS, NORMALIZED_FEATURES
 
-FEATURES = ["return_1", "return_3", "return_7", "sma_7", "sma_20", "sma_50", "volatility_7", "volume_change"]
+FEATURES = NORMALIZED_FEATURES
 
 
 def validate_market_data(raw):
@@ -41,9 +42,10 @@ def demo_data():
         "Volume": rng.integers(1000, 10000, 400)})
 
 
-def analyze(raw):
+def analyze(raw, feature_set="legacy"):
     raw = validate_market_data(raw)
-    df = create_features(raw)
+    df = create_features(raw, feature_set)
+    features = FEATURE_SETS[feature_set]
     if len(df) < 100:
         raise ValueError("ข้อมูลสมบูรณ์ไม่พอหลังสร้างตัวแปร ตรวจสอบ Volume และข้อมูลราคา")
     split = int(len(df) * .7)
@@ -52,8 +54,8 @@ def analyze(raw):
         raise ValueError("ชุดฝึกต้องมีทั้งวันที่ราคาขึ้นและไม่ขึ้น")
     model = XGBClassifier(n_estimators=150, max_depth=3, learning_rate=.05,
         subsample=.8, colsample_bytree=.8, random_state=SEED, eval_metric="logloss", n_jobs=2)
-    model.fit(train[FEATURES], train.target)
-    probabilities = model.predict_proba(test[FEATURES])[:, 1]
+    model.fit(train[features], train.target)
+    probabilities = model.predict_proba(test[features])[:, 1]
     predictions = (probabilities >= .5).astype(int)
     baseline = int(train.target.mean() >= .5)
     ledger = test[["Date", "Close", "future_return"]].copy()
@@ -61,7 +63,7 @@ def analyze(raw):
     ledger["prediction"] = predictions
     ledger["actual"] = test.target
     ledger["correct"] = ledger.prediction == ledger.actual
-    return {"data": raw, "ledger": ledger, "train_samples": len(train),
+    return {"feature_set": feature_set, "features": features, "data": raw, "ledger": ledger, "train_samples": len(train),
         "train_end": train.Date.iloc[-1], "test_start": test.Date.iloc[0],
         "accuracy": accuracy_score(test.target, predictions),
         "balanced_accuracy": balanced_accuracy_score(test.target, predictions),

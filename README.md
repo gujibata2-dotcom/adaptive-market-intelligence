@@ -15,6 +15,35 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
+## Open the dashboard / เปิดหน้าจอใช้งาน
+
+**Windows:** install Python 3.11 or 3.12 with “Add Python to PATH”, download
+this repository as a ZIP, extract it, then double-click `start_windows.bat`.
+The first launch installs dependencies and opens the browser automatically.
+
+Or run from the repository root after setup:
+
+```sh
+python -m streamlit run streamlit_app.py
+```
+
+Open `http://localhost:8501` if the browser does not open. Choose a source and
+click **เริ่มวิเคราะห์**. Demo mode uses clearly labeled synthetic data and
+works offline after installation. Live BTC mode uses Yahoo Finance and drops
+the current UTC daily candle. CSV mode requires consecutive daily observations
+with `Date,Close,High,Low,Volume` and at least 180 rows. Invalid prices,
+duplicate dates, gaps, and nonnumeric values are rejected with a visible error.
+Download the holdout prediction ledger from the results screen.
+
+The dashboard compares XGBoost with a training-majority baseline. It shows
+historical holdout performance, not a forecast for tomorrow or a trading order.
+Switching sources clears old results. Model probabilities are not calibrated.
+
+For browser access without installing Python, deploy on Streamlit Community
+Cloud: connect this GitHub repository, select the branch containing these
+changes, and set the entrypoint to `streamlit_app.py`. No API key is needed.
+This repository does not deploy itself when a PR is opened.
+
 ## Run
 
 ```sh

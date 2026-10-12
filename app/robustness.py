@@ -4,13 +4,15 @@ import pandas as pd
 from sklearn.metrics import accuracy_score
 from xgboost import XGBClassifier
 from app.dashboard_service import validate_market_data, FEATURES
-from app.main import create_features, SEED
+from app.main import SEED
+from app.features import create_features, FEATURE_SETS
 from app.paper_trading import simulate
 
 
-def walk_forward(raw, folds=3, **paper_settings):
+def walk_forward(raw, folds=3, feature_set="legacy", **paper_settings):
     raw = validate_market_data(raw)
-    df = create_features(raw)
+    df = create_features(raw, feature_set)
+    features = FEATURE_SETS[feature_set]
     first_test = max(100, len(df)//2)
     if len(df) - first_test < folds * 20:
         raise ValueError('ต้องมีข้อมูลมากขึ้นเพื่อทดสอบหลายช่วง (อย่างน้อย 20 วันต่อช่วง)')
@@ -22,9 +24,9 @@ def walk_forward(raw, folds=3, **paper_settings):
             raise ValueError('ชุดฝึกต้องมีทั้งขึ้นและไม่ขึ้น')
         model = XGBClassifier(n_estimators=150, max_depth=3, learning_rate=.05,
             subsample=.8, colsample_bytree=.8, random_state=SEED, eval_metric='logloss', n_jobs=2)
-        model.fit(train[FEATURES], train.target)
+        model.fit(train[features], train.target)
         ledger = test[['Date','Close']].copy()
-        ledger['probability_up'] = model.predict_proba(test[FEATURES])[:,1]
+        ledger['probability_up'] = model.predict_proba(test[features])[:,1]
         ledger['fold'] = fold
         ledgers.append(ledger)
         next_date = raw.loc[raw.Date > test.Date.iloc[-1], 'Date'].iloc[0]

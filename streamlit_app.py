@@ -20,7 +20,11 @@ if source == "อัปโหลด CSV":
     st.caption("CSV รายวันต่อเนื่อง อย่างน้อย 180 แถว: Date, Close, High, Low, Volume")
     upload = st.file_uploader("เลือกไฟล์ CSV", type=["csv"])
     st.download_button("ดาวน์โหลดตัวอย่าง CSV (ข้อมูลจำลอง)", demo_data().to_csv(index=False).encode(), "sample_market_data.csv", "text/csv")
-source_key = (source, upload.getvalue() if upload is not None else None)
+feature_label = st.selectbox("ชุดตัวแปร AI", ["เดิม: ตัวแปร 8 ตัว", "ทดลอง: ตัวแปรสัดส่วน 12 ตัว"])
+feature_set = "normalized" if feature_label.startswith("ทดลอง") else "legacy"
+if feature_set == "normalized":
+    st.caption("ชุดทดลอง: ลดการยึดระดับราคาและเพิ่มข้อมูล OHLCV แต่ผลชุดย้อนหลังที่ตรวจแล้วขาดทุนมากกว่าชุดเดิม จึงยังไม่เป็นค่าหลัก")
+source_key = (feature_set, source, upload.getvalue() if upload is not None else None)
 if st.session_state.get("source_key") != source_key:
     st.session_state.pop("analysis", None)
     st.session_state.pop("paper_result", None)
@@ -40,7 +44,7 @@ if st.button("เริ่มวิเคราะห์", type="primary"):
                 if upload is None:
                     raise ValueError("กรุณาเลือกไฟล์ CSV ก่อน")
                 raw = pd.read_csv(upload)
-            st.session_state.analysis = analyze(raw)
+            st.session_state.analysis = analyze(raw, feature_set=feature_set)
             st.session_state.analysis["provider"] = provider if source == "โหลด BTC จริง (มีแหล่งสำรอง)" else source
     except ValueError as exc:
         st.error(str(exc))
@@ -50,6 +54,7 @@ if st.button("เริ่มวิเคราะห์", type="primary"):
 result = st.session_state.get("analysis")
 if result is not None:
     st.caption("แหล่งข้อมูล: " + result["provider"])
+    st.caption("ตัวแปรที่ใช้: " + ", ".join(result["features"]))
     if source == "ทดลองด้วยข้อมูลจำลอง":
         st.warning("ข้อมูลจำลองสำหรับทดลองหน้าจอ ไม่ใช่ราคา BTC จริง")
     cols = st.columns(3)
@@ -115,7 +120,7 @@ if result is not None:
         from app.robustness import walk_forward
         try:
             with st.spinner("กำลังทดสอบหลายช่วง..."):
-                table, _ = walk_forward(result['data'])
+                table, _ = walk_forward(result['data'], feature_set=result["feature_set"])
                 st.session_state['robustness_result'] = table
         except ValueError as exc:
             st.error(str(exc))

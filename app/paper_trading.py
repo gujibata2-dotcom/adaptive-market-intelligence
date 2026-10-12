@@ -79,9 +79,11 @@ def simulate(prices, signals, initial_cash=10000., allocation=.25, fee_rate=.001
     # Buy-and-hold enters at the same first eligible execution close and exits at end.
     benchmark_units = initial_cash / (float(prices.Close.iloc[1]) * (1 + slippage) * (1 + fee_rate))
     benchmark = benchmark_units * float(prices.Close.iloc[-1]) * (1 - slippage) * (1 - fee_rate)
+    matched_benchmark = initial_cash * (1 - allocation) + allocation * benchmark
     trade_frame = pd.DataFrame(trades, columns=['Date', 'signal_date', 'side', 'reason', 'price', 'units', 'fee', 'realized_pnl'])
     return dict(curve=curve, trades=trade_frame, final_equity=cash,
         net_pnl=cash-initial_cash, total_return=cash/initial_cash-1,
         max_drawdown=-float(curve.drawdown.min()), closed_trades=len(realized),
         win_rate=float(np.mean(np.array(realized) > 0)) if realized else None,
-        fees=float(trade_frame.fee.sum()), benchmark_return=benchmark/initial_cash-1)
+        fees=float(trade_frame.fee.sum()), benchmark_return=benchmark/initial_cash-1,
+        matched_benchmark_return=matched_benchmark/initial_cash-1)

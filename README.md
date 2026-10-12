@@ -29,7 +29,7 @@ python -m streamlit run streamlit_app.py
 
 Open `http://localhost:8501` if the browser does not open. Choose a source and
 click **เริ่มวิเคราะห์**. Demo mode uses clearly labeled synthetic data and
-works offline after installation. Live BTC mode uses Yahoo Finance and drops
+works offline after installation. Live BTC mode uses Coinbase daily candles first and Yahoo Finance as fallback and drops
 the current UTC daily candle. CSV mode requires consecutive daily observations
 with `Date,Close,High,Low,Volume` and at least 180 rows. Invalid prices,
 duplicate dates, gaps, and nonnumeric values are rejected with a visible error.
@@ -99,3 +99,41 @@ broker. It has no broker integration, persistent account, scheduler, exchange
 order book, or real-money orders. CSV dates must have daily continuity; model
 feature gaps can lead to days without signals. Repeated tuning on the same
 holdout overfits that period. Demo-mode profits use synthetic prices only.
+
+## Reliable inputs and multi-period validation
+
+`app/data/btc_sources.py` downloads an entire dataset from one provider; it
+never merges Coinbase exchange volume with Yahoo aggregate volume. Requests
+use timeouts and bounded HTTP retries. Coinbase pagination stays below the
+300-candle limit, filters duplicates/out-of-range/current-day candles, and
+requires complete requested daily history. Yahoo fallback also validates daily
+continuity. Provider failures do not silently substitute synthetic prices.
+Reference: https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-candles
+
+The dashboard's walk-forward button evaluates three consecutive windows with
+an expanding training history and one purged row per boundary. Hyperparameters
+and trading settings remain fixed. Window regime labels are descriptive,
+assigned after the window ends at ±5% price return, and do not affect signals.
+Each window starts a new account. Returns cannot be summed as one continuous
+account. This is a first robustness check, not proof of future profitability.
+
+Buy-and-hold now includes a matched-allocation benchmark: invest the same
+initial fraction (default 25%) as the strategy and keep the rest in cash.
+The 100% benchmark is shown separately. Strategy exposure changes with its
+signals and cash balance, so this matches initial allocation, not daily risk.
+
+Reproduce the real Coinbase snapshot results (2021-10-13 through 2026-10-11):
+
+```sh
+python experiments/run_paper_validation.py --csv experiments/paper_validation/btc_daily.csv --output /tmp/paper-validation
+# Or fetch fresh data:
+python experiments/run_paper_validation.py
+```
+
+The committed `experiments/paper_validation/` snapshot and outputs were
+actually generated with the default settings on Python 3.12. The single
+holdout account lost **3.80%**, versus **2.78% loss** for matched buy-and-hold;
+maximum strategy drawdown was **13.79%**. Three walk-forward returns were
+**-2.64%, +7.63%, -1.50%**. It underperformed matched buy-and-hold in two
+windows. This evidence does not justify real-money deployment. These are
+historical next-close executions with modeled costs, not live broker fills.

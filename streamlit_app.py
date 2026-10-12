@@ -11,17 +11,10 @@ st.info("ผลแสดงความแม่นยำย้อนหลั�
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def download_btc():
-    df = yf.download("BTC-USD", period="5y", interval="1d", auto_adjust=True, progress=False)
-    if df.empty:
-        raise ValueError("โหลดข้อมูล BTC ไม่สำเร็จ ลองอีกครั้งหรืออัปโหลด CSV")
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df.reset_index()
-    # Exclude today's candle, which may still be changing.
-    dates = pd.to_datetime(df.Date, utc=True)
-    return df.loc[dates.dt.date < datetime.now(timezone.utc).date()]
+    from app.data.btc_sources import load_btc
+    return load_btc()
 
-source = st.radio("แหล่งข้อมูล", ["ทดลองด้วยข้อมูลจำลอง", "โหลด BTC จาก Yahoo Finance", "อัปโหลด CSV"], horizontal=True)
+source = st.radio("แหล่งข้อมูล", ["ทดลองด้วยข้อมูลจำลอง", "โหลด BTC จริง (มีแหล่งสำรอง)", "อัปโหลด CSV"], horizontal=True)
 upload = None
 if source == "อัปโหลด CSV":
     st.caption("CSV รายวันต่อเนื่อง อย่างน้อย 180 แถว: Date, Close, High, Low, Volume")
@@ -31,21 +24,24 @@ source_key = (source, upload.getvalue() if upload is not None else None)
 if st.session_state.get("source_key") != source_key:
     st.session_state.pop("analysis", None)
     st.session_state.pop("paper_result", None)
+    st.session_state.pop("robustness_result", None)
     st.session_state["source_key"] = source_key
 if st.button("เริ่มวิเคราะห์", type="primary"):
     st.session_state.pop("analysis", None)
     st.session_state.pop("paper_result", None)
+    st.session_state.pop("robustness_result", None)
     try:
         with st.spinner("กำลังเตรียมข้อมูลและทดสอบโมเดล..."):
             if source == "ทดลองด้วยข้อมูลจำลอง":
                 raw = demo_data()
-            elif source == "โหลด BTC จาก Yahoo Finance":
-                raw = download_btc()
+            elif source == "โหลด BTC จริง (มีแหล่งสำรอง)":
+                raw, provider = download_btc()
             else:
                 if upload is None:
                     raise ValueError("กรุณาเลือกไฟล์ CSV ก่อน")
                 raw = pd.read_csv(upload)
             st.session_state.analysis = analyze(raw)
+            st.session_state.analysis["provider"] = provider if source == "โหลด BTC จริง (มีแหล่งสำรอง)" else source
     except ValueError as exc:
         st.error(str(exc))
     except Exception:
@@ -53,6 +49,7 @@ if st.button("เริ่มวิเคราะห์", type="primary"):
 
 result = st.session_state.get("analysis")
 if result is not None:
+    st.caption("แหล่งข้อมูล: " + result["provider"])
     if source == "ทดลองด้วยข้อมูลจำลอง":
         st.warning("ข้อมูลจำลองสำหรับทดลองหน้าจอ ไม่ใช่ราคา BTC จริง")
     cols = st.columns(3)
@@ -102,7 +99,7 @@ if result is not None:
         cols[1].metric("กำไร/ขาดทุนสุทธิ (USD)", f"{paper['net_pnl']:+,.2f}")
         cols[2].metric("ผลตอบแทนสุทธิ", f"{paper['total_return']:.2%}")
         cols[3].metric("เงินทุนลดลงสูงสุด", f"{paper['max_drawdown']:.2%}")
-        st.caption(f"ปิดการซื้อขาย {paper['closed_trades']} ครั้ง • ค่าธรรมเนียมรวม {paper['fees']:.2f} USD • ซื้อแล้วถือด้วยเงินเต็มจำนวน: {paper['benchmark_return']:.2%}")
+        st.caption(f"ปิดการซื้อขาย {paper['closed_trades']} ครั้ง • ค่าธรรมเนียมรวม {paper['fees']:.2f} USD • ซื้อแล้วถือด้วยสัดส่วนเงินเท่าบอท: {paper['matched_benchmark_return']:.2%} • ถือด้วยเงินเต็มจำนวน: {paper['benchmark_return']:.2%}")
         if paper['win_rate'] is not None:
             st.write(f"สัดส่วนการซื้อขายที่กำไร: {paper['win_rate']:.1%}")
         st.caption("ผลนี้เป็นค่าตั้งจากรอบที่กดรันล่าสุด เปลี่ยนค่าตั้งแล้วกดรันใหม่ • การปรับค่าซ้ำบนชุดทดสอบอาจทำให้ผลดูดีเกินจริง")
@@ -110,3 +107,20 @@ if result is not None:
         st.dataframe(paper['trades'], hide_index=True, use_container_width=True)
         st.download_button("ดาวน์โหลดรายการซื้อ–ขายจำลอง", paper['trades'].to_csv(index=False).encode(), "paper_trades.csv", "text/csv")
         st.download_button("ดาวน์โหลดประวัติเงินทุน", paper['curve'].to_csv(index=False).encode(), "paper_equity.csv", "text/csv")
+
+if result is not None:
+    st.subheader("ทดสอบหลายช่วงเวลา (Walk-forward)")
+    st.caption("ฝึกใหม่ด้วยข้อมูลก่อนแต่ละช่วง เว้นขอบเขต 1 แถว • ใช้ค่ามาตรฐานคงที่: เงิน 10,000 USD, ลงทุน 25%, ซื้อ 0.60/ขาย 0.40, ค่าธรรมเนียมและ slippage ข้างละ 0.10%, stop 10%")
+    if st.button("ทดสอบ 3 ช่วงเวลา"):
+        from app.robustness import walk_forward
+        try:
+            with st.spinner("กำลังทดสอบหลายช่วง..."):
+                table, _ = walk_forward(result['data'])
+                st.session_state['robustness_result'] = table
+        except ValueError as exc:
+            st.error(str(exc))
+    if 'robustness_result' in st.session_state:
+        table = st.session_state['robustness_result']
+        st.dataframe(table, hide_index=True, use_container_width=True)
+        st.caption("ตัวเลข return/accuracy/drawdown เป็นสัดส่วน เช่น 0.05 = 5% • UP/DOWN/SIDEWAYS จำแนกหลังจบช่วงด้วยผลตอบแทน ±5%; ไม่ใช้เลือกคำสั่งซื้อขาย แต่ละช่วงเริ่มบัญชีใหม่ จึงห้ามรวมเป็นผลตอบแทนบัญชีต่อเนื่อง")
+        st.download_button("ดาวน์โหลดผลหลายช่วง", table.to_csv(index=False).encode(), "walk_forward.csv", "text/csv")

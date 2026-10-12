@@ -75,3 +75,27 @@ Small p-values show association under a model, not profitable trading. The
 classifier evaluates predictions made after each daily close, for the next
 close. No transaction costs or executable trading strategy are modeled.
 A single holdout does not establish robustness across market periods.
+
+## Historical paper account / บัญชีจำลองย้อนหลัง
+
+After analyzing data, set USD starting capital, allocation per entry, buy/sell
+probability thresholds, per-side fees/slippage, and a close-only stop-loss.
+Click **รันบัญชีจำลอง** for net P&L, return, drawdown, equity history, and trade
+CSV exports. The account is long-only, holds one position, and never borrows.
+Signals from day t execute at day t+1's close, so no same-close fill is assumed.
+When flat, a qualifying signal buys the configured fraction of available cash,
+including the buy fee. When held, a sell signal liquidates the entire position.
+A close below the stop level sells at that close with adverse slippage; this is
+not an intraday stop and cannot guarantee the specified loss limit. The final
+position is liquidated with costs; no new entry is allowed on the final day.
+Days without signals retain the position subject to the stop. Drawdown includes
+open-position mark-to-market, and winning-trade counts include both-side costs.
+The buy-and-hold benchmark invests 100% at the first eligible execution close
+and exits at the final close with the same friction; it has greater exposure
+than the default 25% strategy allocation.
+
+This is a historical simulated account, not a continuously running live paper
+broker. It has no broker integration, persistent account, scheduler, exchange
+order book, or real-money orders. CSV dates must have daily continuity; model
+feature gaps can lead to days without signals. Repeated tuning on the same
+holdout overfits that period. Demo-mode profits use synthetic prices only.
